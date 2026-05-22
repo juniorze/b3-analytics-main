@@ -37,6 +37,7 @@ tests/report.txt
 tests/regressivo_ultimo.txt
 tests/AUDITORIA_LOG.md
 tests/screenshots/
+.playwright-cli/
 
 # ============================================================
 # Streamlit
