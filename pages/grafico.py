@@ -18,7 +18,7 @@ from b3analytics.presentation.components import (
     render_ai_badge,
     render_fundamentals,
 )
-from b3analytics.presentation.setup_badges import setup_semaphore_badge
+from b3analytics.presentation.setup_badges import setup_empty_state, setup_semaphore_badge
 from b3analytics.presentation.theme import COLORS, apply_plotly_template
 
 ACOES  = get_acoes()
@@ -280,8 +280,10 @@ with col_s:
             unsafe_allow_html=True,
         )
     else:
-        st.markdown('<div style="color:#71717A;font-size:0.85rem">Nenhum setup identificado para este ativo/período.</div>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="color:#71717A;font-size:0.85rem">{setup_empty_state()}</div>',
+            unsafe_allow_html=True,
+        )
 
 with col_f:
     st.markdown("### Fundamentalistas")

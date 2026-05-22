@@ -4,6 +4,18 @@ import html
 
 from b3analytics.domain.setup_classifier import classify_setup
 
+SETUP_EDUCATIONAL_NOTICE = (
+    "Avaliacao educacional. Nao constitui recomendacao de investimento. "
+    "Dados podem falhar ou estar atrasados."
+)
+SETUP_SEMAPHORE_LEGEND = (
+    "Semaforo tecnico: favoravel para estudo | atencao | sinal tecnico contrario | "
+    "sem setup tecnico atual ou dados insuficientes."
+)
+SETUP_EMPTY_STATE = "Sem setup tecnico atual."
+SETUP_SCAN_PROMPT = "Configure os parametros e execute a avaliacao educacional manualmente."
+PORTFOLIO_EMPTY_SETUP_STATE = "Sem ativos em posicao para analise tecnica."
+
 
 def setup_semaphore_badge(setup: dict | None, compact: bool = False) -> str:
     classification = classify_setup(setup)
@@ -30,6 +42,30 @@ def setup_semaphore_badge(setup: dict | None, compact: bool = False) -> str:
         f'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">'
         f'<span>{icon}</span><span>{label}</span></span>{details}'
     )
+
+
+def setup_status_label(classification: dict) -> str:
+    return f"{classification['icon']} {classification['label']}"
+
+
+def setup_educational_notice() -> str:
+    return SETUP_EDUCATIONAL_NOTICE
+
+
+def setup_semaphore_legend() -> str:
+    return SETUP_SEMAPHORE_LEGEND
+
+
+def setup_empty_state() -> str:
+    return SETUP_EMPTY_STATE
+
+
+def setup_scan_prompt() -> str:
+    return SETUP_SCAN_PROMPT
+
+
+def portfolio_empty_setup_state() -> str:
+    return PORTFOLIO_EMPTY_SETUP_STATE
 
 
 def _rgba(hex_color: str, alpha: float) -> str:

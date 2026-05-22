@@ -19,6 +19,11 @@ from b3analytics.infrastructure.ai_config import (
 from b3analytics.infrastructure.fetcher import fetch_all_parallel
 from b3analytics.infrastructure.macro import get_macro_context
 from b3analytics.presentation.components import render_ai_badge, render_setup_card
+from b3analytics.presentation.setup_badges import (
+    setup_educational_notice,
+    setup_scan_prompt,
+    setup_semaphore_legend,
+)
 
 ACOES  = get_acoes()
 GRUPOS = get_grupos()
@@ -122,10 +127,7 @@ with col7:
 
 st.markdown('<h2 style="font-family:\'Space Mono\',monospace;color:#FAFAFA">Setups Ativos</h2>', unsafe_allow_html=True)
 
-st.caption(
-    "🟢 Favorável para estudo · 🟡 Atenção: critérios parciais · "
-    "🔴 Sinal técnico baixista/contrário · ⚪ Sem setup ou dados insuficientes"
-)
+st.caption(setup_semaphore_legend())
 
 run_btn = st.button("⟳  Escanear todos os ativos", width="stretch", type="primary")
 
@@ -166,7 +168,7 @@ if run_btn:
     status.empty()
 
 elif "all_setups" not in st.session_state:
-    st.info("Configure o capital, risco e período, depois clique em **⟳ Escanear todos os ativos**.")
+    st.info(f"{setup_scan_prompt()} Clique em **⟳ Escanear todos os ativos**.")
     st.stop()
 
 all_setups: dict = st.session_state.get("all_setups", {})
@@ -242,12 +244,7 @@ n_total_cache = len(all_setups)
 st.caption(f"{len(items)} setups exibidos · {n_total_cache} encontrados no último scan")
 
 st.divider()
-st.caption(
-    "⚠️ As informações exibidas têm caráter exclusivamente informativo e educacional. "
-    "Nenhum conteúdo deste sistema constitui recomendação de investimento ou indicação "
-    "operacional sobre ativos. Dados com delay de aproximadamente 15 minutos (Yahoo Finance). "
-    "Análise técnica não garante resultados futuros. Invista com responsabilidade."
-)
+st.caption(setup_educational_notice())
 
 _ia_provider   = get_active_provider()
 _ia_key        = get_api_key(_ia_provider)

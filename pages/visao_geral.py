@@ -40,10 +40,6 @@ def _trend_compact(tr: dict | None) -> str:
     )
 
 
-def _setup_badge(s: dict | None) -> str:
-    return setup_semaphore_badge(s, compact=True)
-
-
 st.markdown(
     '<h2 style="font-family:\'Space Mono\',monospace;color:#FAFAFA;margin-bottom:4px">Visão Geral</h2>',
     unsafe_allow_html=True,
@@ -206,7 +202,7 @@ _ttl_vg = get_ttl()
 rows_html = ""
 for r in rows:
     trend_html = _trend_compact(r["_trend"])
-    setup_html = _setup_badge(r["_setup"])
+    setup_html = setup_semaphore_badge(r["_setup"], compact=True)
     ia_html    = _ia_badge_html(r["_ticker"], _ttl_vg)
 
     rows_html += f"""<tr style="border-bottom:1px solid #1F1F23">

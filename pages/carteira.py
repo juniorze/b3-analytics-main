@@ -25,6 +25,11 @@ from b3analytics.infrastructure.fetcher import get_historico_titled, get_precos_
 from b3analytics.infrastructure.portfolio_import import parse_portfolio_csv
 from b3analytics.infrastructure.portfolio_store import PortfolioStore, get_default_db_path
 from b3analytics.presentation.components import fmt_brl, fmt_pct
+from b3analytics.presentation.setup_badges import (
+    portfolio_empty_setup_state,
+    setup_educational_notice,
+    setup_status_label,
+)
 
 
 @st.cache_resource
@@ -396,17 +401,14 @@ with st.expander("Risco da carteira", expanded=bool(dashboard.rows)):
         st.info("Correlacao nao calculada: menos de 2 ativos com historico suficiente.")
 
 st.markdown("### Semáforo técnico da carteira")
-st.caption(
-    "Análise educacional. Não constitui recomendação de investimento. "
-    "Dados podem falhar ou estar atrasados."
-)
+st.caption(setup_educational_notice())
 
 last_setup_analysis = st.session_state.get("portfolio_setup_analysis", [])
 last_setup_tickers = st.session_state.get("portfolio_setup_analysis_tickers", ())
 last_setup_analyzed_at = st.session_state.get("portfolio_setup_analysis_at")
 
 if not position_tickers:
-    st.info("Sem ativos em posicao para analise tecnica.")
+    st.info(portfolio_empty_setup_state())
 
 analysis_col, clear_col = st.columns([2, 1])
 with analysis_col:
@@ -455,7 +457,7 @@ if run_setup_analysis:
         setup_results.append(
             {
                 "ticker": ticker,
-                "status_label": f"{classification['icon']} {classification['label']}",
+                "status_label": setup_status_label(classification),
                 "reading": portfolio_technical_reading(classification),
                 "reasons": classification.get("reasons", []),
                 "warnings": classification.get("warnings", []),
