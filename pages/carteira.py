@@ -510,7 +510,11 @@ if dashboard.rows:
         },
     )
 
-    chart_df = dashboard_df.dropna(subset=["Peso %"]).set_index("Ticker")[["Peso %"]]
+    chart_df = dashboard_df.copy()
+    chart_df["Peso %"] = pd.to_numeric(chart_df["Peso %"], errors="coerce")
+    chart_df = chart_df.dropna(subset=["Peso %"])
+    chart_df = chart_df[chart_df["Peso %"].between(float("-inf"), float("inf"), inclusive="neither")]
+    chart_df = chart_df[chart_df["Peso %"] > 0].set_index("Ticker")[["Peso %"]]
     if not chart_df.empty:
         st.markdown("#### Alocacao por ativo")
         st.bar_chart(chart_df)
