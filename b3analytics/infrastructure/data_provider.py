@@ -1,30 +1,39 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+import requests
 import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
 
 SOURCE_YFINANCE = "yfinance"
+SOURCE_ALPHA_VANTAGE = "alpha_vantage"
 
-STATUS_OK = "ok"
-STATUS_UNAVAILABLE = "dados_indisponiveis"
-STATUS_EMPTY_HISTORY = "historico_vazio"
-STATUS_INSUFFICIENT_HISTORY = "historico_insuficiente"
-STATUS_MISSING_QUOTE = "cotacao_ausente"
-STATUS_PROVIDER_UNAVAILABLE = "fonte_externa_indisponivel"
-STATUS_CONTROLLED_ERROR = "erro_controlado"
+STATUS_OK = "OK"
+STATUS_MISSING_API_KEY = "MISSING_API_KEY"
+STATUS_RATE_LIMITED = "RATE_LIMITED"
+STATUS_EMPTY = "EMPTY"
+STATUS_ERROR = "ERROR"
+STATUS_UNAVAILABLE = STATUS_ERROR
+STATUS_EMPTY_HISTORY = STATUS_EMPTY
+STATUS_INSUFFICIENT_HISTORY = STATUS_EMPTY
+STATUS_MISSING_QUOTE = STATUS_EMPTY
+STATUS_PROVIDER_UNAVAILABLE = STATUS_ERROR
+STATUS_CONTROLLED_ERROR = STATUS_ERROR
 
 ERROR_UNAVAILABLE = "dados_indisponiveis"
 ERROR_EMPTY_HISTORY = "historico_vazio"
 ERROR_INSUFFICIENT_HISTORY = "historico_insuficiente"
 ERROR_MISSING_QUOTE = "cotacao_ausente"
 ERROR_PROVIDER_UNAVAILABLE = "fonte_externa_indisponivel"
+ERROR_MISSING_API_KEY = "api_key_ausente"
+ERROR_RATE_LIMITED = "limite_requisicoes"
 ERROR_TIMEOUT = "timeout"
 ERROR_CONTROLLED = "erro_controlado"
 
@@ -218,11 +227,192 @@ class YFinanceProvider:
         return DataProviderResult(source=self.source, status=STATUS_OK, data=info)
 
 
-# Espaço reservado para provedores futuros sem integrar APIs externas nesta fase:
-# Alpha Vantage, EODHD, B3 oficial e Cedro/Market Data Cloud podem implementar
-# os mesmos metodos e retornar DataProviderResult.
-_DEFAULT_PROVIDER = YFinanceProvider()
+class AlphaVantageProvider:
+    source = SOURCE_ALPHA_VANTAGE
+    endpoint = "https://www.alphavantage.co/query"
+
+    def __init__(self, api_key: str | None = None, timeout: int = 15) -> None:
+        self.api_key = api_key
+        self.timeout = timeout
+
+    def _api_key(self) -> str | None:
+        return self.api_key or os.environ.get("ALPHA_VANTAGE_API_KEY")
+
+    def get_history(self, ticker: str, period: str) -> DataProviderResult:
+        api_key = self._api_key()
+        if not api_key:
+            logger.warning(
+                "Alpha Vantage sem chave configurada: ticker=%s periodo=%s fonte=%s erro=%s",
+                ticker,
+                period,
+                self.source,
+                ERROR_MISSING_API_KEY,
+            )
+            return DataProviderResult(
+                source=self.source,
+                status=STATUS_MISSING_API_KEY,
+                data=None,
+                error_type=ERROR_MISSING_API_KEY,
+                message="Alpha Vantage nao configurado: defina ALPHA_VANTAGE_API_KEY.",
+            )
+
+        try:
+            response = requests.get(
+                self.endpoint,
+                params={
+                    "function": "TIME_SERIES_DAILY",
+                    "symbol": _alpha_vantage_symbol(ticker),
+                    "outputsize": "full",
+                    "apikey": api_key,
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            return controlled_error_result(
+                source=self.source,
+                ticker=ticker,
+                period=period,
+                operation="history",
+                exc=exc,
+                context="AlphaVantageProvider.get_history",
+            )
+
+        if _alpha_vantage_rate_limit_message(payload):
+            logger.warning(
+                "Alpha Vantage limitado: ticker=%s periodo=%s fonte=%s erro=%s",
+                ticker,
+                period,
+                self.source,
+                ERROR_RATE_LIMITED,
+            )
+            return DataProviderResult(
+                source=self.source,
+                status=STATUS_RATE_LIMITED,
+                data=None,
+                error_type=ERROR_RATE_LIMITED,
+                message="Limite de requisicoes do Alpha Vantage atingido.",
+            )
+
+        if payload.get("Error Message"):
+            logger.warning(
+                "Alpha Vantage retornou erro: ticker=%s periodo=%s fonte=%s erro=%s",
+                ticker,
+                period,
+                self.source,
+                ERROR_CONTROLLED,
+            )
+            return DataProviderResult(
+                source=self.source,
+                status=STATUS_ERROR,
+                data=None,
+                error_type=ERROR_CONTROLLED,
+                message="Alpha Vantage nao retornou dados para o ticker informado.",
+            )
+
+        df = _alpha_vantage_daily_dataframe(payload, period)
+        return history_result(
+            source=self.source,
+            ticker=ticker,
+            period=period,
+            df=df,
+            context="AlphaVantageProvider.get_history",
+        )
 
 
-def get_default_provider() -> YFinanceProvider:
+class FallbackDataProvider:
+    def __init__(
+        self,
+        primary: YFinanceProvider | None = None,
+        fallback: AlphaVantageProvider | None = None,
+    ) -> None:
+        self.primary = primary or YFinanceProvider()
+        self.fallback = fallback or AlphaVantageProvider()
+        self.source = self.primary.source
+
+    def get_history(self, ticker: str, period: str) -> DataProviderResult:
+        primary_result = self.primary.get_history(ticker, period)
+        if primary_result.ok:
+            return primary_result
+
+        fallback_result = self.fallback.get_history(ticker, period)
+        logger.warning(
+            "Fallback de dados executado: ticker=%s periodo=%s fonte=%s status=%s erro=%s",
+            ticker,
+            period,
+            fallback_result.source,
+            fallback_result.status,
+            fallback_result.error_type,
+        )
+        return fallback_result if fallback_result.ok else primary_result
+
+    def get_primary_history(self, ticker: str, period: str) -> DataProviderResult:
+        return self.primary.get_history(ticker, period)
+
+    def get_info(self, ticker: str) -> DataProviderResult:
+        return self.primary.get_info(ticker)
+
+
+def _alpha_vantage_symbol(ticker: str) -> str:
+    if ticker.endswith(".SA"):
+        return f"{ticker[:-3]}.SAO"
+    return ticker
+
+
+def _alpha_vantage_rate_limit_message(payload: dict) -> str | None:
+    for key in ("Note", "Information"):
+        value = str(payload.get(key, ""))
+        lowered = value.lower()
+        if "rate limit" in lowered or "frequency" in lowered or "standard api call" in lowered:
+            return value
+    return None
+
+
+def _alpha_vantage_daily_dataframe(payload: dict, period: str) -> pd.DataFrame:
+    series = payload.get("Time Series (Daily)")
+    if not isinstance(series, dict) or not series:
+        return pd.DataFrame()
+
+    rows: list[dict[str, float]] = []
+    index: list[pd.Timestamp] = []
+    for date, values in series.items():
+        try:
+            index.append(pd.Timestamp(date))
+            rows.append(
+                {
+                    "Open": float(values["1. open"]),
+                    "High": float(values["2. high"]),
+                    "Low": float(values["3. low"]),
+                    "Close": float(values["4. close"]),
+                    "Volume": float(values["5. volume"]),
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows, index=pd.DatetimeIndex(index)).sort_index()
+    cutoff = _period_cutoff(period, df.index.max())
+    return df.loc[df.index >= cutoff] if cutoff is not None else df
+
+
+def _period_cutoff(period: str, end: pd.Timestamp) -> pd.Timestamp | None:
+    if period == "max":
+        return None
+    if period.endswith("mo"):
+        return end - pd.DateOffset(months=int(period[:-2]))
+    if period.endswith("y"):
+        return end - pd.DateOffset(years=int(period[:-1]))
+    if period.endswith("d"):
+        return end - pd.Timedelta(days=int(period[:-1]))
+    return None
+
+
+_DEFAULT_PROVIDER = FallbackDataProvider()
+
+
+def get_default_provider() -> FallbackDataProvider:
     return _DEFAULT_PROVIDER

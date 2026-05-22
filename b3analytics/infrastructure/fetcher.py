@@ -41,10 +41,19 @@ def _mock_history(ticker: str) -> pd.DataFrame:
     )
 
 
-def _fetch_one(ticker: str, periodo: str = "3mo") -> tuple[str, pd.DataFrame | None]:
+def _fetch_one(
+    ticker: str,
+    periodo: str = "3mo",
+    *,
+    use_external_fallback: bool = True,
+) -> tuple[str, pd.DataFrame | None]:
     if os.environ.get("B3_ANALYTICS_E2E") == "1":
         return ticker, _mock_history(ticker)
-    result = get_default_provider().get_history(ticker, periodo)
+    provider = get_default_provider()
+    if not use_external_fallback and hasattr(provider, "get_primary_history"):
+        result = provider.get_primary_history(ticker, periodo)
+    else:
+        result = provider.get_history(ticker, periodo)
     return ticker, result.data if result.ok else None
 
 
@@ -55,7 +64,10 @@ def fetch_all_parallel(
 ) -> dict[str, pd.DataFrame]:
     results: dict[str, pd.DataFrame] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_fetch_one, t, periodo): t for t in tickers}
+        futures = {
+            executor.submit(_fetch_one, t, periodo, use_external_fallback=False): t
+            for t in tickers
+        }
         for future in as_completed(futures):
             ticker, df = future.result()
             if df is not None:
