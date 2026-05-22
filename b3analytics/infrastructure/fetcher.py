@@ -10,6 +10,7 @@ import yfinance as yf
 
 from b3analytics.config.assets import ACOES
 from b3analytics.config.settings import CACHE_TTL_SECONDS, FUNDAMENTALS_SANITY, PERIODOS
+from b3analytics.infrastructure.data_provider import get_default_provider
 
 logger = logging.getLogger(__name__)
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
@@ -43,25 +44,8 @@ def _mock_history(ticker: str) -> pd.DataFrame:
 def _fetch_one(ticker: str, periodo: str = "3mo") -> tuple[str, pd.DataFrame | None]:
     if os.environ.get("B3_ANALYTICS_E2E") == "1":
         return ticker, _mock_history(ticker)
-    try:
-        df = yf.Ticker(ticker).history(period=periodo, auto_adjust=True)
-        if df is None or len(df) < 2:
-            return ticker, None
-        df.index = pd.to_datetime(df.index).tz_localize(None)
-        rename = {}
-        for c in df.columns:
-            lc = c.lower()
-            if lc == "open":              rename[c] = "Open"
-            elif lc == "high":            rename[c] = "High"
-            elif lc == "low":             rename[c] = "Low"
-            elif lc in ("close", "adj close"): rename[c] = "Close"
-            elif lc == "volume":          rename[c] = "Volume"
-        if rename:
-            df = df.rename(columns=rename)
-        return ticker, df
-    except Exception:
-        logger.warning("Falha ao buscar histórico no yfinance: ticker=%s periodo=%s", ticker, periodo)
-        return ticker, None
+    result = get_default_provider().get_history(ticker, periodo)
+    return ticker, result.data if result.ok else None
 
 
 def fetch_all_parallel(
@@ -177,11 +161,10 @@ def get_precos_atuais(tickers: tuple[str, ...]) -> dict[str, dict]:
 
 @st.cache_data(ttl=600)
 def get_fundamentals(ticker: str) -> dict:
-    try:
-        info = yf.Ticker(ticker).info or {}
-    except Exception:
-        logger.warning("Falha ao buscar info fundamentalista no yfinance: ticker=%s", ticker)
+    result = get_default_provider().get_info(ticker)
+    if not result.ok:
         return {}
+    info = result.data or {}
 
     def safe(key, default=None):
         val = info.get(key, default)
